@@ -16,6 +16,12 @@ from langchain.agents.middleware import after_agent
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command, interrupt
 
+from openinference.instrumentation.langchain import LangChainInstrumentor
+from phoenix.otel import register
+
+# 세션 4 1단계: LangChain 실행을 trace로 기록해 Phoenix(localhost:6006)로 보낸다
+tracer_provider = register(project_name="research-agent", protocol="http/protobuf", batch=True)
+LangChainInstrumentor().instrument(tracer_provider=tracer_provider)
 
 PROMPT = """
 너는 리서치 보고서 작업을 감독하는 lead다. 보고서 본문은 직접 쓰지 않는다.
