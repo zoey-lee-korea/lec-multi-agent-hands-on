@@ -1,0 +1,52 @@
+
+"""세션 1 실습: 단일 ReAct 리서치 Agent"""
+import sys
+from datetime import datetime
+from pathlib import Path
+from langchain.agents import create_agent
+from langchain.tools import tool
+from llm import model
+from tavily_search import fetch, search
+
+import json
+
+PROMPT = """너는 리서치 보고서를 쓰는 Agent다.
+- 주제를 하위 질문 3-4개로 나누고, 질문마다 search로 검색한다. 검색 결과의 본문 일부로 부족할 때만 fetch로 본문을 읽는다.
+- 보고서는 한국어 마크다운으로 쓴다. 주장마다 [1], [2]처럼 출처 번호를 달고, 끝의 '## 출처'에 번호, 제목, URL을 적는다.
+- 검색 결과에 없는 내용은 쓰지 않는다."""
+
+# 함수 이름, docstring, 타입 힌트가 모델이 보는 도구 설명과 인자 스키마가 된다
+agent = create_agent(
+ model, tools=[tool(search), tool(fetch)], system_prompt=PROMPT, name="single_agent")
+
+
+def save(report):
+ """보고서를 artifacts/<실행 ID>/report.md에 저장한다."""
+ path = Path("artifacts") / datetime.now().strftime("%m%d-%H%M%S") / "report.md"
+ path.parent.mkdir(parents=True, exist_ok=True)
+ path.write_text(report)
+ print("저장:", path)
+
+
+def main(topic):
+ # 노드(model, tools)가 끝날 때마다 그 노드가 추가한 메시지를 받는다
+ for update in agent.stream({"messages": [{"role": "user", "content": topic}]}, stream_mode="updates"):
+    for node, value in update.items():
+        for m in value["messages"]:
+            if node == "model": # 모델 호출 한 번: 요청한 도구마다 한 줄, 없으면 보고서 작성
+                for c in m.tool_calls:
+                    print("[model]", c["name"], c["args"])
+                if not m.tool_calls:
+                    print("[model] 보고서 작성")
+            else: # 도구 결과: 앞의 결과 제목 두 개와 전체 크기
+                titles = [r.get("title", r["url"]) for r in json.loads(m.text)["results"][:2]]
+                print(f" [{m.name}] {len(m.text):,}자 | {titles}")
+ save(m.text) # 마지막 메시지가 보고서
+
+
+
+if __name__ == "__main__":
+ main(sys.argv[1])
+
+
+
